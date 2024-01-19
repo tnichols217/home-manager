@@ -52,6 +52,10 @@ in {
       argument in Home Manager. This disables the Home Manager
       options {option}`nixpkgs.*`'';
 
+    forceNixProfiles = mkEnableOption ''
+      forcing home-manager to use `nix profile` instead of
+      `nix-env` for activating the environment.'';
+
     backupFileExtension = mkOption {
       type = types.nullOr types.str;
       default = null;
