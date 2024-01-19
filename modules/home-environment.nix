@@ -597,7 +597,7 @@ in
             $DRY_RUN_CMD $oldNix profile install $1
           }
 
-          if [[ ${if cfg.forceNixProfiles then "true" else "false"} = true || -e ${cfg.profileDirectory}/manifest.json ]] ; then
+          if [[ ${if config.home-manager.forceNixProfiles then "true" else "false"} = true || -e ${cfg.profileDirectory}/manifest.json ]] ; then
             INSTALL_CMD="nix profile install"
             INSTALL_CMD_ACTUAL="nixReplaceProfile"
             LIST_CMD="nix profile list"
