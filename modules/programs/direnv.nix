@@ -1,8 +1,8 @@
 { config, lib, pkgs, ... }:
-
-with lib;
-
 let
+  inherit (lib)
+    mkOption mkRenamedOptionModule mkRemovedOptionModule mkEnableOption types
+    mkPackageOption mkIf mkAfter getExe;
 
   cfg = config.programs.direnv;
 
@@ -19,7 +19,7 @@ in {
       "Flake support is now always enabled.")
   ];
 
-  meta.maintainers = [ maintainers.rycee ];
+  meta.maintainers = [ lib.maintainers.rycee ];
 
   options.programs.direnv = {
     enable = mkEnableOption "direnv, the environment switcher";
@@ -95,6 +95,7 @@ in {
       package = mkPackageOption pkgs "nix-direnv" { };
     };
 
+    silent = mkEnableOption "silent mode, that is, disabling direnv logging";
   };
 
   config = mkIf cfg.enable {
@@ -104,11 +105,12 @@ in {
       source = tomlFormat.generate "direnv-config" cfg.config;
     };
 
-    xdg.configFile."direnv/direnvrc" = let
-      text = concatStringsSep "\n" (optional (cfg.stdlib != "") cfg.stdlib
-        ++ optional cfg.nix-direnv.enable
-        "source ${cfg.nix-direnv.package}/share/nix-direnv/direnvrc");
-    in mkIf (text != "") { inherit text; };
+    xdg.configFile."direnv/lib/hm-nix-direnv.sh" = mkIf cfg.nix-direnv.enable {
+      source = "${cfg.nix-direnv.package}/share/nix-direnv/direnvrc";
+    };
+
+    xdg.configFile."direnv/direnvrc" =
+      lib.mkIf (cfg.stdlib != "") { text = cfg.stdlib; };
 
     programs.bash.initExtra = mkIf cfg.enableBashIntegration (
       # Using mkAfter to make it more likely to appear after other
@@ -162,5 +164,7 @@ in {
             }
         )
       '');
+
+    home.sessionVariables = lib.mkIf cfg.silent { DIRENV_LOG_FORMAT = ""; };
   };
 }

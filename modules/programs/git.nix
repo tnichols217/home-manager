@@ -222,6 +222,8 @@ in {
           '';
         };
 
+        package = mkPackageOption pkgs "difftastic" { };
+
         background = mkOption {
           type = types.enum [ "light" "dark" ];
           default = "light";
@@ -392,7 +394,7 @@ in {
           nameValuePair "sendemail.${name}" (if account.msmtp.enable then {
             smtpServer = "${pkgs.msmtp}/bin/msmtp";
             envelopeSender = "auto";
-            from = address;
+            from = "${realName} <${address}>";
           } else
             {
               smtpEncryption = if smtp.tls.enable then
@@ -407,7 +409,7 @@ in {
                 mkIf smtp.tls.enable (toString smtp.tls.certificatesFile);
               smtpServer = smtp.host;
               smtpUser = userName;
-              from = address;
+              from = "${realName} <${address}>";
             } // optionalAttrs (smtp.port != null) {
               smtpServerPort = smtp.port;
             });
@@ -478,11 +480,11 @@ in {
     })
 
     (mkIf cfg.difftastic.enable {
-      home.packages = [ pkgs.difftastic ];
+      home.packages = [ cfg.difftastic.package ];
 
       programs.git.iniContent = let
         difftCommand = concatStringsSep " " [
-          "${pkgs.difftastic}/bin/difft"
+          "${getExe cfg.difftastic.package}"
           "--color ${cfg.difftastic.color}"
           "--background ${cfg.difftastic.background}"
           "--display ${cfg.difftastic.display}"

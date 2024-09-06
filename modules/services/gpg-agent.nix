@@ -27,9 +27,7 @@ let
   '' + optionalString cfg.enableSshSupport ''
     ${gpgPkg}/bin/gpg-connect-agent updatestartuptty /bye | ignore
 
-    if not "SSH_AUTH_SOCK" in $env {
-      $env.SSH_AUTH_SOCK = (${gpgPkg}/bin/gpgconf --list-dirs agent-ssh-socket)
-    }
+    $env.SSH_AUTH_SOCK = ($env.SSH_AUTH_SOCK? | default (${gpgPkg}/bin/gpgconf --list-dirs agent-ssh-socket))
   '';
 
   # mimic `gpgconf` output for use in `systemd` unit definitions.
@@ -50,9 +48,8 @@ let
   hexStringToBase32 = let
     mod = a: b: a - a / b * b;
     pow2 = elemAt [ 1 2 4 8 16 32 64 128 256 ];
-    splitChars = s: init (tail (splitString "" s));
 
-    base32Alphabet = splitChars "ybndrfg8ejkmcpqxot1uwisza345h769";
+    base32Alphabet = stringToCharacters "ybndrfg8ejkmcpqxot1uwisza345h769";
     hexToIntTable = listToAttrs (genList (x: {
       name = toLower (toHexString x);
       value = x;
@@ -78,10 +75,15 @@ let
         buf = buf';
         bufBits = bufBits';
       };
-  in hexString: (foldl' go initState (splitChars hexString)).ret;
+  in hexString: (foldl' go initState (stringToCharacters hexString)).ret;
 
 in {
   meta.maintainers = [ maintainers.rycee ];
+
+  imports = [
+    (mkRemovedOptionModule [ "services" "gpg-agent" "pinentryFlavor" ]
+      "Use services.gpg-agent.pinentryPackage instead")
+  ];
 
   options = {
     services.gpg-agent = {
@@ -194,10 +196,9 @@ in {
           configuration file.
         '';
       };
-
-      pinentryFlavor = mkOption {
-        type = types.nullOr (types.enum pkgs.pinentry.flavors);
-        example = "gnome3";
+      pinentryPackage = mkOption {
+        type = types.nullOr types.package;
+        example = literalExpression "pkgs.pinentry-gnome3";
         default = null;
         description = ''
           Which pinentry interface to use. If not
@@ -245,8 +246,8 @@ in {
           "max-cache-ttl ${toString cfg.maxCacheTtl}"
           ++ optional (cfg.maxCacheTtlSsh != null)
           "max-cache-ttl-ssh ${toString cfg.maxCacheTtlSsh}"
-          ++ optional (cfg.pinentryFlavor != null)
-          "pinentry-program ${pkgs.pinentry.${cfg.pinentryFlavor}}/bin/pinentry"
+          ++ optional (cfg.pinentryPackage != null)
+          "pinentry-program ${lib.getExe cfg.pinentryPackage}"
           ++ [ cfg.extraConfig ]);
 
       home.sessionVariablesExtra = optionalString cfg.enableSshSupport ''
