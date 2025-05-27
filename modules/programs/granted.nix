@@ -1,39 +1,39 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
-
   cfg = config.programs.granted;
-  package = pkgs.granted;
-
-in {
-  meta.maintainers = [ hm.maintainers.wcarlsen ];
+in
+{
+  meta.maintainers = [ lib.hm.maintainers.wcarlsen ];
 
   options.programs.granted = {
-    enable = mkEnableOption "granted";
+    enable = lib.mkEnableOption "granted";
 
-    enableZshIntegration =
-      lib.hm.shell.mkZshIntegrationOption { inherit config; };
+    package = lib.mkPackageOption pkgs "granted" { };
 
-    enableFishIntegration =
-      lib.hm.shell.mkFishIntegrationOption { inherit config; };
+    enableZshIntegration = lib.hm.shell.mkZshIntegrationOption { inherit config; };
+
+    enableFishIntegration = lib.hm.shell.mkFishIntegrationOption { inherit config; };
   };
 
-  config = mkIf cfg.enable {
-    home.packages = [ package ];
+  config = lib.mkIf cfg.enable {
+    home.packages = [ cfg.package ];
 
-    programs.zsh.initExtra = mkIf cfg.enableZshIntegration ''
+    programs.zsh.initContent = lib.mkIf cfg.enableZshIntegration ''
       function assume() {
         export GRANTED_ALIAS_CONFIGURED="true"
-        source ${package}/bin/assume "$@"
+        source ${cfg.package}/bin/assume "$@"
         unset GRANTED_ALIAS_CONFIGURED
       }
     '';
 
-    programs.fish.functions.assume = mkIf cfg.enableFishIntegration ''
+    programs.fish.functions.assume = lib.mkIf cfg.enableFishIntegration ''
       set -x GRANTED_ALIAS_CONFIGURED "true"
-      source ${package}/share/assume.fish $argv
+      source ${cfg.package}/share/assume.fish $argv
       set -e GRANTED_ALIAS_CONFIGURED
     '';
   };

@@ -1,40 +1,43 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  inherit (lib) mkIf;
 
   cfg = config.programs.pazi;
 
-in {
+in
+{
   meta.maintainers = [ ];
 
   options.programs.pazi = {
-    enable = mkEnableOption "pazi";
+    enable = lib.mkEnableOption "pazi";
 
-    enableBashIntegration =
-      lib.hm.shell.mkBashIntegrationOption { inherit config; };
+    package = lib.mkPackageOption pkgs "pazi" { };
 
-    enableFishIntegration =
-      lib.hm.shell.mkFishIntegrationOption { inherit config; };
+    enableBashIntegration = lib.hm.shell.mkBashIntegrationOption { inherit config; };
 
-    enableZshIntegration =
-      lib.hm.shell.mkZshIntegrationOption { inherit config; };
+    enableFishIntegration = lib.hm.shell.mkFishIntegrationOption { inherit config; };
+
+    enableZshIntegration = lib.hm.shell.mkZshIntegrationOption { inherit config; };
   };
 
   config = mkIf cfg.enable {
-    home.packages = [ pkgs.pazi ];
+    home.packages = [ cfg.package ];
 
     programs.bash.initExtra = mkIf cfg.enableBashIntegration ''
-      eval "$(${pkgs.pazi}/bin/pazi init bash)"
+      eval "$(${lib.getExe cfg.package} init bash)"
     '';
 
-    programs.zsh.initExtra = mkIf cfg.enableZshIntegration ''
-      eval "$(${pkgs.pazi}/bin/pazi init zsh)"
+    programs.zsh.initContent = mkIf cfg.enableZshIntegration ''
+      eval "$(${lib.getExe cfg.package} init zsh)"
     '';
 
     programs.fish.shellInit = mkIf cfg.enableFishIntegration ''
-      ${pkgs.pazi}/bin/pazi init fish | source
+      ${lib.getExe cfg.package} init fish | source
     '';
   };
 }

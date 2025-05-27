@@ -1,22 +1,23 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
-
   cfg = config.programs.todoman;
+in
+{
 
-  format = pkgs.formats.keyValue { };
-
-in {
-
-  meta.maintainers = [ hm.maintainers.mikilio ];
+  meta.maintainers = [ lib.hm.maintainers.mikilio ];
 
   options.programs.todoman = {
     enable = lib.mkEnableOption "todoman";
 
-    glob = mkOption {
-      type = types.str;
+    package = lib.mkPackageOption pkgs "todoman" { nullable = true; };
+
+    glob = lib.mkOption {
+      type = lib.types.str;
       default = "*";
       description = ''
         The glob expansion which matches all directories relevant.
@@ -24,8 +25,8 @@ in {
       example = "*/*";
     };
 
-    extraConfig = mkOption {
-      type = types.lines;
+    extraConfig = lib.mkOption {
+      type = lib.types.lines;
       default = "";
       description = ''
         Text for configuration of todoman.
@@ -43,16 +44,18 @@ in {
     };
   };
 
-  config = mkIf cfg.enable {
-    assertions = [{
-      assertion = config.accounts.calendar ? basePath;
-      message = ''
-        A base directory for calendars must be specified via
-        `accounts.calendar.basePath` to generate config for todoman
-      '';
-    }];
+  config = lib.mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = config.accounts.calendar ? basePath;
+        message = ''
+          A base directory for calendars must be specified via
+          `accounts.calendar.basePath` to generate config for todoman
+        '';
+      }
+    ];
 
-    home.packages = [ pkgs.todoman ];
+    home.packages = lib.mkIf (cfg.package != null) [ cfg.package ];
 
     xdg.configFile."todoman/config.py".text = lib.concatLines [
       ''path = "${config.accounts.calendar.basePath}/${cfg.glob}"''

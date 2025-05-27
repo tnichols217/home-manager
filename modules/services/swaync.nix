@@ -1,4 +1,9 @@
-{ pkgs, lib, config, ... }:
+{
+  pkgs,
+  lib,
+  config,
+  ...
+}:
 
 let
 
@@ -6,9 +11,12 @@ let
 
   jsonFormat = pkgs.formats.json { };
 
-in {
-  meta.maintainers =
-    [ lib.hm.maintainers.abayomi185 lib.maintainers.khaneliman ];
+in
+{
+  meta.maintainers = [
+    lib.hm.maintainers.abayomi185
+    lib.maintainers.khaneliman
+  ];
 
   options.services.swaync = {
     enable = lib.mkEnableOption "Swaync notification daemon";
@@ -79,17 +87,19 @@ in {
   config = lib.mkIf cfg.enable {
     # at-spi2-core is to minimize journalctl noise of:
     # "AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files"
-    home.packages =
-      lib.mkIf (cfg.package != null) [ cfg.package pkgs.at-spi2-core ];
+    home.packages = [
+      cfg.package
+      pkgs.at-spi2-core
+    ];
 
     xdg.configFile = {
-      "swaync/config.json".source =
-        jsonFormat.generate "config.json" cfg.settings;
+      "swaync/config.json".source = jsonFormat.generate "config.json" cfg.settings;
       "swaync/style.css" = lib.mkIf (cfg.style != null) {
-        source = if builtins.isPath cfg.style || lib.isStorePath cfg.style then
-          cfg.style
-        else
-          pkgs.writeText "swaync/style.css" cfg.style;
+        source =
+          if builtins.isPath cfg.style || lib.isStorePath cfg.style then
+            cfg.style
+          else
+            pkgs.writeText "swaync/style.css" cfg.style;
       };
     };
 
@@ -100,12 +110,16 @@ in {
         PartOf = [ config.wayland.systemd.target ];
         After = [ config.wayland.systemd.target ];
         ConditionEnvironment = "WAYLAND_DISPLAY";
+        X-Restart-Triggers = lib.mkMerge [
+          [ config.xdg.configFile."swaync/config.json".source ]
+          (lib.mkIf (cfg.style != null) [ config.xdg.configFile."swaync/style.css".source ])
+        ];
       };
 
       Service = {
         Type = "dbus";
         BusName = "org.freedesktop.Notifications";
-        ExecStart = "${cfg.package}/bin/swaync";
+        ExecStart = "${lib.getExe cfg.package}";
         Restart = "on-failure";
       };
 

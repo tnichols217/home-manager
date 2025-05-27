@@ -1,15 +1,14 @@
 { lib, ... }:
-
-with lib;
-
 let
-
-  modulePath = [ "programs" "floorp" ];
+  modulePath = [
+    "programs"
+    "floorp"
+  ];
 
   mkFirefoxModule = import ./firefox/mkFirefoxModule.nix;
-
-in {
-  meta.maintainers = [ hm.maintainers.bricked ];
+in
+{
+  meta.maintainers = [ lib.hm.maintainers.bricked ];
 
   imports = [
     (mkFirefoxModule {
@@ -19,8 +18,12 @@ in {
       unwrappedPackageName = "floorp-unwrapped";
       visible = true;
 
-      platforms.linux = { configPath = ".floorp"; };
-      platforms.darwin = { configPath = "Library/Application Support/Floorp"; };
+      platforms.linux = {
+        configPath = ".floorp";
+      };
+      platforms.darwin = {
+        configPath = "Library/Application Support/Floorp";
+      };
     })
   ];
 }

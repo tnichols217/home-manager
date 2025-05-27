@@ -1,14 +1,22 @@
 { lib, ... }:
-with lib;
 let
-  modulePath = [ "programs" "firefox" ];
+  inherit (lib) mkRemovedOptionModule;
 
-  moduleName = concatStringsSep "." modulePath;
+  modulePath = [
+    "programs"
+    "firefox"
+  ];
+
+  moduleName = lib.concatStringsSep "." modulePath;
 
   mkFirefoxModule = import ./firefox/mkFirefoxModule.nix;
-in {
-  meta.maintainers =
-    [ maintainers.rycee hm.maintainers.bricked hm.maintainers.HPsaucii ];
+in
+{
+  meta.maintainers = [
+    lib.maintainers.rycee
+    lib.hm.maintainers.bricked
+    lib.hm.maintainers.HPsaucii
+  ];
 
   imports = [
     (mkFirefoxModule {
@@ -18,7 +26,9 @@ in {
       unwrappedPackageName = "firefox-unwrapped";
       visible = true;
 
-      platforms.linux = rec { configPath = ".mozilla/firefox"; };
+      platforms.linux = {
+        configPath = ".mozilla/firefox";
+      };
       platforms.darwin = {
         configPath = "Library/Application Support/Firefox";
       };
@@ -32,11 +42,14 @@ in {
       to
 
         ${moduleName}.profiles.myprofile.extensions.packages = [ foo bar ];'')
-    (mkRemovedOptionModule (modulePath ++ [ "enableAdobeFlash" ])
-      "Support for this option has been removed.")
-    (mkRemovedOptionModule (modulePath ++ [ "enableGoogleTalk" ])
-      "Support for this option has been removed.")
-    (mkRemovedOptionModule (modulePath ++ [ "enableIcedTea" ])
-      "Support for this option has been removed.")
+    (mkRemovedOptionModule (
+      modulePath ++ [ "enableAdobeFlash" ]
+    ) "Support for this option has been removed.")
+    (mkRemovedOptionModule (
+      modulePath ++ [ "enableGoogleTalk" ]
+    ) "Support for this option has been removed.")
+    (mkRemovedOptionModule (
+      modulePath ++ [ "enableIcedTea" ]
+    ) "Support for this option has been removed.")
   ];
 }

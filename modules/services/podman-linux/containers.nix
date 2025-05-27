@@ -1,130 +1,169 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  inherit (lib) mkOption types;
+
   cfg = config.services.podman;
 
   podman-lib = import ./podman-lib.nix { inherit pkgs lib config; };
 
-  createQuadletSource = name: containerDef:
+  createQuadletSource =
+    name: containerDef:
     let
-      formatServiceNameForType = type: name:
-        {
-          image = "podman-${name}-image.service";
-          build = "podman-${name}-build.service";
-          network = "podman-${name}-network.service";
-          volume = "podman-${name}-volume.service";
-        }."${type}";
-
-      dependencyByHomeManagerQuadlet = type: name:
+      extractQuadletReference =
+        type: value:
         let
-          definitionsOfType =
-            filter (q: q.resourceType == type) cfg.internal.quadletDefinitions;
-          matchingName =
-            filter (q: q.serviceName == "podman-${name}") definitionsOfType;
-        in if ((length matchingName) == 1) then
-          [ (formatServiceNameForType type name) ]
+          regex = "([a-zA-Z0-9_-]+\\." + type + ").*";
+          parts = builtins.match regex value;
+        in
+        if parts == null then value else builtins.elemAt parts 0;
+
+      dependencyBySuffix =
+        type: value:
+        if (lib.hasInfix ".${type}" value) then
+          let
+            name = extractQuadletReference type value;
+          in
+          if (lib.hasAttr name cfg.internal.builtQuadlets) then
+            [ (cfg.internal.builtQuadlets.${name}) ]
+          else
+            [ ]
         else
           [ ];
 
-      forEachValue = type: value:
-        let resolve = v: dependencyByHomeManagerQuadlet type v;
-        in if isList value then
-          concatLists (map resolve value)
+      withResolverFor =
+        type: value:
+        let
+          resolve = v: dependencyBySuffix type v;
+        in
+        if builtins.isList value then
+          builtins.concatLists (map resolve value) # Flatten list of lists
         else
           resolve value;
 
-      withResolverFor = type: value:
-        {
-          "image" = forEachValue "image" value;
-          "build" = forEachValue "build" value;
-          "network" = forEachValue "network" value;
-          "volume" = let
-            a = if isList value then value else [ value ];
-            volumes = map (v: elemAt (splitString ":" v) 0) a;
-          in forEachValue "volume" volumes;
-        }.${type};
-
-      dependencyServices = (withResolverFor "image" containerDef.image)
+      dependencyServices =
+        (withResolverFor "image" containerDef.image)
         ++ (withResolverFor "build" containerDef.image)
         ++ (withResolverFor "network" containerDef.network)
         ++ (withResolverFor "volume" containerDef.volumes);
 
-      resolvedImage = if (builtins.hasAttr containerDef.image cfg.images) then
-        cfg.images."${containerDef.image}".image
-      else if (builtins.hasAttr containerDef.image cfg.builds) then
-        "localhost/homemanager/${containerDef.image}"
-      else
-        containerDef.image;
-
-      quadlet = (podman-lib.deepMerge {
-        Container = {
-          AddCapability = containerDef.addCapabilities;
-          AddDevice = containerDef.devices;
-          AutoUpdate = containerDef.autoUpdate;
-          ContainerName = name;
-          DropCapability = containerDef.dropCapabilities;
-          Entrypoint = containerDef.entrypoint;
-          Environment = containerDef.environment;
-          EnvironmentFile = containerDef.environmentFile;
-          Exec = containerDef.exec;
-          Group = containerDef.group;
-          Image = resolvedImage;
-          IP = containerDef.ip4;
-          IP6 = containerDef.ip6;
-          Label =
-            (containerDef.labels // { "nix.home-manager.managed" = true; });
-          Network = containerDef.network;
-          NetworkAlias = containerDef.networkAlias;
-          PodmanArgs = containerDef.extraPodmanArgs;
-          PublishPort = containerDef.ports;
-          UserNS = containerDef.userNS;
-          User = containerDef.user;
-          Volume = containerDef.volumes;
-        };
-        Install = {
-          WantedBy = optionals containerDef.autoStart [
-            "default.target"
-            "multi-user.target"
-          ];
-        };
-        Service = {
-          Environment = {
-            PATH = (builtins.concatStringsSep ":" [
-              "/run/wrappers/bin"
-              "/run/current-system/sw/bin"
-              "${config.home.homeDirectory}/.nix-profile/bin"
-            ]);
-          };
-          Restart = "always";
-          TimeoutStopSec = 30;
-        };
-        Unit = {
-          After = dependencyServices;
-          Requires = dependencyServices;
-          Description = (if (builtins.isString containerDef.description) then
-            containerDef.description
+      checkQuadletReference =
+        types: value:
+        if builtins.isList value then
+          builtins.concatLists (map (checkQuadletReference types) value)
+        else
+          let
+            type = lib.findFirst (t: lib.hasInfix ".${t}" value) null types;
+          in
+          if (type != null) then
+            let
+              quadletName = extractQuadletReference type value;
+              quadletsOfType = lib.filterAttrs (
+                n: v: v.quadletData.resourceType == type
+              ) cfg.internal.builtQuadlets;
+            in
+            if (lib.hasAttr quadletName quadletsOfType) then
+              [
+                (lib.replaceStrings [ quadletName ] [ "podman-${quadletName}" ] value)
+              ]
+            else
+              [ value ]
+          else if
+            ((lib.hasInfix "/nix/store" value) == false && lib.hasAttr value cfg.internal.builtQuadlets)
+          then
+            lib.warn ''
+              A value for Podman container '${name}' might use a reference to another quadlet: ${value}.
+              Append the type '.${
+                cfg.internal.builtQuadlets.${value}.quadletData.resourceType
+              }' to '${lib.baseName value}' if this is intended.
+            '' [ value ]
           else
-            "Service for container ${name}");
-        };
-      } containerDef.extraConfig);
-    in ''
-      # Automatically generated by home-manager podman container configuration
-      # DO NOT EDIT THIS FILE DIRECTLY
-      #
-      # ${name}.container
-      ${podman-lib.toQuadletIni quadlet}
-    '';
+            [ value ];
 
-  toQuadletInternal = name: containerDef: {
-    assertions = podman-lib.buildConfigAsserts name containerDef.extraConfig;
-    resourceType = "container";
-    serviceName =
-      "podman-${name}"; # quadlet service name: 'podman-<name>.service'
-    source =
-      podman-lib.removeBlankLines (createQuadletSource name containerDef);
-  };
+      quadlet = (
+        podman-lib.deepMerge {
+          Container = {
+            AddCapability = containerDef.addCapabilities;
+            AddDevice = containerDef.devices;
+            AutoUpdate = containerDef.autoUpdate;
+            ContainerName = name;
+            DropCapability = containerDef.dropCapabilities;
+            Entrypoint = containerDef.entrypoint;
+            Environment = containerDef.environment;
+            EnvironmentFile = containerDef.environmentFile;
+            Exec = containerDef.exec;
+            Group = containerDef.group;
+            Image = checkQuadletReference [ "build" "image" ] containerDef.image;
+            IP = containerDef.ip4;
+            IP6 = containerDef.ip6;
+            Label = (containerDef.labels // { "nix.home-manager.managed" = true; });
+            Network = checkQuadletReference [ "network" ] containerDef.network;
+            NetworkAlias = containerDef.networkAlias;
+            PodmanArgs = containerDef.extraPodmanArgs;
+            PublishPort = containerDef.ports;
+            UserNS = containerDef.userNS;
+            User = containerDef.user;
+            Volume = checkQuadletReference [ "volume" ] containerDef.volumes;
+          };
+          Install = {
+            WantedBy = lib.optionals containerDef.autoStart [
+              "default.target"
+              "multi-user.target"
+            ];
+          };
+          Service = {
+            Environment = {
+              PATH = (
+                builtins.concatStringsSep ":" [
+                  "/run/wrappers/bin"
+                  "/run/current-system/sw/bin"
+                  "${config.home.homeDirectory}/.nix-profile/bin"
+                  "${pkgs.systemd}/bin"
+                ]
+              );
+            };
+            Restart = "always";
+            TimeoutStopSec = 30;
+          };
+          Unit = {
+            Description = (
+              if (builtins.isString containerDef.description) then
+                containerDef.description
+              else
+                "Service for container ${name}"
+            );
+          };
+        } containerDef.extraConfig
+      );
+    in
+    {
+      dependencies = dependencyServices;
+      attrs = quadlet;
+      text = ''
+        # Automatically generated by home-manager podman container configuration
+        # DO NOT EDIT THIS FILE DIRECTLY
+        #
+        # ${name}.container
+        ${podman-lib.toQuadletIni quadlet}
+      '';
+    };
+
+  toQuadletInternal =
+    name: containerDef:
+    let
+      src = createQuadletSource name containerDef;
+    in
+    {
+      assertions = podman-lib.buildConfigAsserts name containerDef.extraConfig;
+      dependencies = src.dependencies;
+      resourceType = "container";
+      serviceName = "podman-${src.attrs.Container.ContainerName}"; # generated service name: 'podman-<name>.service'
+      source = podman-lib.removeBlankLines src.text;
+    };
 
   # Define the container user type as the user interface
   containerDefinitionType = types.submodule {
@@ -133,7 +172,10 @@ let
       addCapabilities = mkOption {
         type = with types; listOf str;
         default = [ ];
-        example = [ "CAP_DAC_OVERRIDE" "CAP_IPC_OWNER" ];
+        example = [
+          "CAP_DAC_OVERRIDE"
+          "CAP_IPC_OWNER"
+        ];
         description = "The capabilities to add to the container.";
       };
 
@@ -146,7 +188,11 @@ let
       };
 
       autoUpdate = mkOption {
-        type = types.enum [ null "registry" "local" ];
+        type = types.enum [
+          null
+          "registry"
+          "local"
+        ];
         default = null;
         example = "registry";
         description = "The autoupdate policy for the container.";
@@ -169,7 +215,10 @@ let
       dropCapabilities = mkOption {
         type = with types; listOf str;
         default = [ ];
-        example = [ "CAP_DAC_OVERRIDE" "CAP_IPC_OWNER" ];
+        example = [
+          "CAP_DAC_OVERRIDE"
+          "CAP_IPC_OWNER"
+        ];
         description = "The capabilities to drop from the container.";
       };
 
@@ -183,7 +232,7 @@ let
       environment = mkOption {
         type = podman-lib.primitiveAttrs;
         default = { };
-        example = literalExpression ''
+        example = lib.literalExpression ''
           {
             VAR1 = "0:100";
             VAR2 = true;
@@ -196,7 +245,10 @@ let
       environmentFile = mkOption {
         type = with types; listOf str;
         default = [ ];
-        example = [ "/etc/environment" "/etc/other-env" ];
+        example = [
+          "/etc/environment"
+          "/etc/other-env"
+        ];
         description = ''
           Paths to files containing container environment variables.
         '';
@@ -222,7 +274,7 @@ let
       extraConfig = mkOption {
         type = podman-lib.extraConfigType;
         default = { };
-        example = literalExpression ''
+        example = lib.literalExpression ''
           {
             Container = {
               User = 1000;
@@ -274,8 +326,8 @@ let
       network = mkOption {
         type = with types; either str (listOf str);
         default = [ ];
-        apply = value: if isString value then [ value ] else value;
-        example = literalMD ''
+        apply = value: if lib.isString value then [ value ] else value;
+        example = lib.literalMD ''
           `"host"`
           or
           `"bridge_network_1"`
@@ -291,14 +343,20 @@ let
       networkAlias = mkOption {
         type = with types; listOf str;
         default = [ ];
-        example = [ "mycontainer" "web" ];
+        example = [
+          "mycontainer"
+          "web"
+        ];
         description = "Network aliases for the container.";
       };
 
       ports = mkOption {
         type = with types; listOf str;
         default = [ ];
-        example = [ "8080:80" "8443:443" ];
+        example = [
+          "8080:80"
+          "8443:443"
+        ];
         description = "A mapping of ports between host and container";
       };
 
@@ -317,14 +375,18 @@ let
       volumes = mkOption {
         type = with types; listOf str;
         default = [ ];
-        example = [ "/tmp:/tmp" "/var/run/test.secret:/etc/secret:ro" ];
+        example = [
+          "/tmp:/tmp"
+          "/var/run/test.secret:/etc/secret:ro"
+        ];
         description = "The volumes to mount into the container.";
       };
 
     };
   };
 
-in {
+in
+{
 
   imports = [ ./options.nix ];
 
@@ -335,11 +397,12 @@ in {
   };
 
   config =
-    let containerQuadlets = mapAttrsToList toQuadletInternal cfg.containers;
-    in mkIf cfg.enable {
+    let
+      containerQuadlets = lib.mapAttrsToList toQuadletInternal cfg.containers;
+    in
+    lib.mkIf cfg.enable {
       services.podman.internal.quadletDefinitions = containerQuadlets;
-      assertions =
-        flatten (map (container: container.assertions) containerQuadlets);
+      assertions = lib.flatten (map (container: container.assertions) containerQuadlets);
 
       # manifest file
       xdg.configFile."podman/containers.manifest".text =

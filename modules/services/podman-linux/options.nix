@@ -11,6 +11,13 @@ let
         description = "List of Nix type assertions.";
       };
 
+      dependencies = lib.mkOption {
+        type = with lib.types; listOf package;
+        default = [ ];
+        internal = true;
+        description = "List of systemd service dependencies.";
+      };
+
       resourceType = lib.mkOption {
         type = lib.types.str;
         default = "";
@@ -31,21 +38,25 @@ let
       };
     };
   };
-in {
+in
+{
   options.services.podman = {
-    internal.quadletDefinitions = lib.mkOption {
-      type = lib.types.listOf quadletInternalType;
-      default = { };
-      internal = true;
-      description = "List of quadlet source file content and service names.";
+    internal = {
+      quadletDefinitions = lib.mkOption {
+        type = lib.types.listOf quadletInternalType;
+        default = { };
+        internal = true;
+        description = "List of quadlet source file content and service names.";
+      };
+      builtQuadlets = lib.mkOption {
+        type = with lib.types; attrsOf package;
+        default = { };
+        internal = true;
+        description = "All built quadlets.";
+      };
     };
 
-    package = lib.mkOption {
-      type = lib.types.package;
-      default = pkgs.podman;
-      defaultText = lib.literalExpression "pkgs.podman";
-      description = "The podman package to use.";
-    };
+    package = lib.mkPackageOption pkgs "podman" { };
 
     enableTypeChecks = lib.mkEnableOption "type checks for podman quadlets";
   };

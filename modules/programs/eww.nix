@@ -1,69 +1,63 @@
-{ config, lib, pkgs, ... }:
-
-with lib;
-
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  inherit (lib) mkIf;
 
   cfg = config.programs.eww;
-  ewwCmd = "${cfg.package}/bin/eww";
-
-in {
-  meta.maintainers = [ hm.maintainers.mainrs ];
+in
+{
+  meta.maintainers = [ lib.hm.maintainers.mainrs ];
 
   options.programs.eww = {
-    enable = mkEnableOption "eww";
+    enable = lib.mkEnableOption "eww";
 
-    package = mkOption {
-      type = types.package;
-      default = pkgs.eww;
-      defaultText = literalExpression "pkgs.eww";
-      example = literalExpression "pkgs.eww";
-      description = ''
-        The eww package to install.
-      '';
-    };
+    package = lib.mkPackageOption pkgs "eww" { };
 
-    configDir = mkOption {
-      type = types.nullOr types.path;
+    configDir = lib.mkOption {
+      type = lib.types.nullOr lib.types.path;
       default = null;
-      example = literalExpression "./eww-config-dir";
+      example = lib.literalExpression "./eww-config-dir";
       description = ''
         The directory that gets symlinked to
         {file}`$XDG_CONFIG_HOME/eww`.
       '';
     };
 
-    enableBashIntegration =
-      lib.hm.shell.mkBashIntegrationOption { inherit config; };
+    enableBashIntegration = lib.hm.shell.mkBashIntegrationOption { inherit config; };
 
-    enableFishIntegration =
-      lib.hm.shell.mkFishIntegrationOption { inherit config; };
+    enableFishIntegration = lib.hm.shell.mkFishIntegrationOption { inherit config; };
 
-    enableZshIntegration =
-      lib.hm.shell.mkZshIntegrationOption { inherit config; };
+    enableZshIntegration = lib.hm.shell.mkZshIntegrationOption { inherit config; };
   };
 
-  config = mkIf cfg.enable {
-    home.packages = [ cfg.package ];
-    xdg =
-      mkIf (cfg.configDir != null) { configFile."eww".source = cfg.configDir; };
+  config =
+    let
+      ewwCmd = lib.getExe cfg.package;
+    in
+    mkIf cfg.enable {
+      home.packages = [ cfg.package ];
+      xdg = mkIf (cfg.configDir != null) { configFile."eww".source = cfg.configDir; };
 
-    programs.bash.initExtra = mkIf cfg.enableBashIntegration ''
-      if [[ $TERM != "dumb" ]]; then
-        eval "$(${ewwCmd} shell-completions --shell bash)"
-      fi
-    '';
+      programs.bash.initExtra = mkIf cfg.enableBashIntegration ''
+        if [[ $TERM != "dumb" ]]; then
+          eval "$(${ewwCmd} shell-completions --shell bash)"
+        fi
+      '';
 
-    programs.zsh.initExtra = mkIf cfg.enableZshIntegration ''
-      if [[ $TERM != "dumb" ]]; then
-        eval "$(${ewwCmd} shell-completions --shell zsh)"
-      fi
-    '';
+      programs.zsh.initContent = mkIf cfg.enableZshIntegration ''
+        if [[ $TERM != "dumb" ]]; then
+          eval "$(${ewwCmd} shell-completions --shell zsh)"
+        fi
+      '';
 
-    programs.fish.interactiveShellInit = mkIf cfg.enableFishIntegration ''
-      if test "$TERM" != "dumb"
-        eval "$(${ewwCmd} shell-completions --shell fish)"
-      end
-    '';
-  };
+      programs.fish.interactiveShellInit = mkIf cfg.enableFishIntegration ''
+        if test "$TERM" != "dumb"
+          eval "$(${ewwCmd} shell-completions --shell fish)"
+        end
+      '';
+    };
 }

@@ -1,56 +1,65 @@
-{ config, lib, pkgs, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
-  inherit (lib) mkEnableOption mkPackageOption getExe optionalString mkIf;
-
   cfg = config.programs.pay-respects;
-  payRespectsCmd = getExe cfg.package;
-in {
+  payRespectsCmd = lib.getExe cfg.package;
+  cfgOptions = lib.concatStringsSep " " cfg.options;
+in
+{
   meta.maintainers = [ lib.hm.maintainers.ALameLlama ];
 
   options.programs.pay-respects = {
-    enable = mkEnableOption "pay-respects";
+    enable = lib.mkEnableOption "pay-respects";
 
-    package = mkPackageOption pkgs "pay-respects" { };
+    package = lib.mkPackageOption pkgs "pay-respects" { };
 
-    enableBashIntegration =
-      lib.hm.shell.mkBashIntegrationOption { inherit config; };
+    options = lib.mkOption {
+      type = lib.types.listOf lib.types.str;
+      default = [ "--alias" ];
+      example = [
+        "--alias"
+        "f"
+      ];
+      description = ''
+        List of options to pass to pay-respects <shell>.
+      '';
+    };
 
-    enableFishIntegration =
-      lib.hm.shell.mkFishIntegrationOption { inherit config; };
+    enableBashIntegration = lib.hm.shell.mkBashIntegrationOption { inherit config; };
 
-    enableNushellIntegration =
-      lib.hm.shell.mkNushellIntegrationOption { inherit config; };
+    enableFishIntegration = lib.hm.shell.mkFishIntegrationOption { inherit config; };
 
-    enableZshIntegration =
-      lib.hm.shell.mkZshIntegrationOption { inherit config; };
+    enableNushellIntegration = lib.hm.shell.mkNushellIntegrationOption { inherit config; };
+
+    enableZshIntegration = lib.hm.shell.mkZshIntegrationOption { inherit config; };
   };
 
-  config = mkIf cfg.enable {
+  config = lib.mkIf cfg.enable {
     home.packages = [ cfg.package ];
 
     programs = {
-      bash.initExtra = ''
-        ${optionalString cfg.enableBashIntegration ''
-          eval "$(${payRespectsCmd} bash --alias)"
-        ''}
+      bash.initExtra = lib.mkIf cfg.enableBashIntegration ''
+        eval "$(${payRespectsCmd} bash ${cfgOptions})"
       '';
 
-      zsh.initExtra = ''
-        ${optionalString cfg.enableZshIntegration ''
-          eval "$(${payRespectsCmd} zsh --alias)"
-        ''}
+      zsh.initContent = lib.mkIf cfg.enableZshIntegration ''
+        eval "$(${payRespectsCmd} zsh ${cfgOptions})"
       '';
 
-      fish.interactiveShellInit = ''
-        ${optionalString cfg.enableFishIntegration ''
-          ${payRespectsCmd} fish --alias | source
-        ''}
+      fish.interactiveShellInit = lib.mkIf cfg.enableFishIntegration ''
+        ${payRespectsCmd} fish ${cfgOptions} | source
       '';
 
-      nushell.extraConfig = ''
-        ${optionalString cfg.enableNushellIntegration ''
-          ${payRespectsCmd} nushell --alias [<alias>]
-        ''}
+      nushell.extraConfig = lib.mkIf cfg.enableNushellIntegration ''
+        source ${
+          pkgs.runCommand "pay-respects-nushell-config.nu" { } ''
+            ${payRespectsCmd} nushell ${cfgOptions} >> "$out"
+          ''
+        }
       '';
     };
   };

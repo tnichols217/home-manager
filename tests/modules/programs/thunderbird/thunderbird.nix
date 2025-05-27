@@ -1,11 +1,34 @@
-{ lib, realPkgs, ... }: {
-  imports = [ ../../accounts/email-test-accounts.nix ];
+{
+  config,
+  pkgs,
+  ...
+}:
+{
+  imports = [
+    ../../accounts/email-test-accounts.nix
+  ];
 
   accounts.email.accounts = {
     "hm@example.com" = {
       thunderbird = {
         enable = true;
         profiles = [ "first" ];
+        messageFilters = [
+          {
+            name = "Should be first";
+            enabled = true;
+            type = "128";
+            action = "Cry";
+            condition = "ALL";
+          }
+          {
+            name = "Mark as Read on Archive";
+            enabled = true;
+            type = "128";
+            action = "Mark read";
+            condition = "ALL";
+          }
+        ];
       };
 
       aliases = [ "home-manager@example.com" ];
@@ -37,13 +60,9 @@
 
   programs.thunderbird = {
     enable = true;
-
-    # Disable warning so that platforms' behavior is the same
-    darwinSetupWarning = false;
-
-    # Darwin doesn't support wrapped Thunderbird, using unwrapped instead;
-    # using -latest- because ESR is currently broken on Darwin
-    package = realPkgs.thunderbird-latest-unwrapped;
+    package = config.lib.test.mkStubPackage {
+      name = "thunderbird";
+    };
 
     profiles = {
       first = {
@@ -60,12 +79,24 @@
         '';
 
         feedAccounts.rss = { };
+
+        accountsOrder = [
+          "hm@example.com"
+          "rss"
+          "imperative_account"
+          "hm-account"
+        ];
       };
 
       second.settings = {
         "second.setting" = "some-test-setting";
-        second.nested.evenFurtherNested = [ 1 2 3 ];
+        second.nested.evenFurtherNested = [
+          1
+          2
+          3
+        ];
       };
+      second.accountsOrder = [ "account1" ];
     };
 
     settings = {
@@ -74,30 +105,36 @@
     };
   };
 
-  nmt.script = let
-    isDarwin = realPkgs.stdenv.hostPlatform.isDarwin;
-    configDir = if isDarwin then "Library/Thunderbird" else ".thunderbird";
-    profilesDir = if isDarwin then "${configDir}/Profiles" else "${configDir}";
-    platform = if isDarwin then "darwin" else "linux";
-  in ''
-    assertFileExists home-files/${configDir}/profiles.ini
-    assertFileContent home-files/${configDir}/profiles.ini \
-      ${./thunderbird-expected-profiles-${platform}.ini}
+  nmt.script =
+    let
+      isDarwin = pkgs.stdenv.hostPlatform.isDarwin;
+      configDir = if isDarwin then "Library/Thunderbird" else ".thunderbird";
+      profilesDir = if isDarwin then "${configDir}/Profiles" else "${configDir}";
+      platform = if isDarwin then "darwin" else "linux";
+    in
+    ''
+      assertFileExists home-files/${configDir}/profiles.ini
+      assertFileContent home-files/${configDir}/profiles.ini \
+        ${./thunderbird-expected-profiles-${platform}.ini}
 
-    assertFileExists home-files/${profilesDir}/first/user.js
-    assertFileContent home-files/${profilesDir}/first/user.js \
-      ${./thunderbird-expected-first-${platform}.js}
+      assertFileExists home-files/${profilesDir}/first/user.js
+      assertFileContent home-files/${profilesDir}/first/user.js \
+        ${./thunderbird-expected-first-${platform}.js}
 
-    assertFileExists home-files/${profilesDir}/second/user.js
-    assertFileContent home-files/${profilesDir}/second/user.js \
-      ${./thunderbird-expected-second-${platform}.js}
+      assertFileExists home-files/${profilesDir}/second/user.js
+      assertFileContent home-files/${profilesDir}/second/user.js \
+        ${./thunderbird-expected-second-${platform}.js}
 
-    assertFileExists home-files/${profilesDir}/first/chrome/userChrome.css
-    assertFileContent home-files/${profilesDir}/first/chrome/userChrome.css \
-      <(echo "* { color: blue !important; }")
+      assertFileExists home-files/${profilesDir}/first/chrome/userChrome.css
+      assertFileContent home-files/${profilesDir}/first/chrome/userChrome.css \
+        <(echo "* { color: blue !important; }")
 
-    assertFileExists home-files/${profilesDir}/first/chrome/userContent.css
-    assertFileContent home-files/${profilesDir}/first/chrome/userContent.css \
-      <(echo "* { color: red !important; }")
-  '';
+      assertFileExists home-files/${profilesDir}/first/chrome/userContent.css
+      assertFileContent home-files/${profilesDir}/first/chrome/userContent.css \
+        <(echo "* { color: red !important; }")
+
+      assertFileExists home-files/${profilesDir}/first/ImapMail/${builtins.hashString "sha256" "hm@example.com"}/msgFilterRules.dat
+      assertFileContent home-files/${profilesDir}/first/ImapMail/${builtins.hashString "sha256" "hm@example.com"}/msgFilterRules.dat \
+        ${./thunderbird-expected-msgFilterRules.dat}
+    '';
 }
